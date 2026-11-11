@@ -1,0 +1,86 @@
+nama: RDP
+# rdp oleh yamzz dimodifikasi
+pada:
+  pengiriman_alur_kerja:
+
+Pekerjaan:
+  RDP aman:
+    berjalan di: windows-latest
+    waktu habis-menit: 3600
+
+    tangga:
+      - nama: Konfigurasi Pengaturan RDP Inti Oleh Yamzz
+        jalankan: |
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0 -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "SecurityLayer" -Value 0 -Force
+
+          netsh advfirewall firewall delete rule name="RDP-Tailscale"
+          netsh advfirewall firewall add rule name="RDP-Tailscale" dir=in action=allow protocol=TCP localport=3389
+
+          Restart-Service -Name TermService -Force
+
+      - nama: Membuat Pengguna RDP dengan Kata Sandi Aman
+        jalankan: |
+          $username = "DenzzNOV"
+          Kata sandi = "DenzzNO@123"
+          
+          $securePass = ConvertTo-SecureString $password -AsPlainText -Force
+          New-LocalUser -Name $username -Password $securePass -AccountNeverExpires
+          Add-LocalGroupMember -Group "Administrators" -Member $username
+          Add-LocalGroupMember -Group "Remote Desktop Users" -Member $username
+          
+          echo "RDP_CREDS=Pengguna: $username | Kata Sandi: $password" >> $env:GITHUB_ENV
+          
+          jika (-bukan (Get-LocalUser -Name $username)) {
+              keluar 1
+          }
+
+      - nama: Instal Tailscale
+        jalankan: |
+          $tsUrl = "https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi"
+          $installerPath = "$env:TEMP\tailscale.msi"
+          
+          Invoke-WebRequest -Uri $tsUrl -OutFile $installerPath
+          Mulai-Proses msiexec.exe -ArgumentList "/i", "`"$installerPath`"", "/quiet", "/norestart" -Wait
+          Hapus Item $installerPath -Paksa
+
+      - nama: Membangun Koneksi Tailscale
+        jalankan: |
+          & "$env:ProgramFiles\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=gh-runner-$env:GITHUB_RUN_ID
+          
+          $tsIP = $null
+          $percobaan ulang = 0
+          selama (-tidak $tsIP -dan $retries -lt 10) {
+              $tsIP = & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4
+              Mulai-Tidur -Detik 5
+              $percobaan ulang++
+          }
+          
+          jika (-bukan $tsIP) {
+              keluar 1
+          }
+          echo "TAILSCALE_IP=$tsIP" >> $env:GITHUB_ENV
+      
+      - nama: Verifikasi Aksesibilitas RDP
+        jalankan: |
+          Write-Host "Alamat IP Tailscale: $env:TAILSCALE_IP"
+          
+          $testResult = Test-NetConnection -ComputerName $env:TAILSCALE_IP -Port 3389
+          jika (-not $testResult.TcpTestSucceeded) {
+              keluar 1
+          }
+          Write-Host "Konektivitas TCP berhasil!"
+
+      - nama: Pertahankan Koneksi
+        jalankan: |
+          Write-Host "`n=== AKSES RDP ==="
+          Write-Host "Alamat: $env:TAILSCALE_IP"
+          Write-Host "Nama pengguna: DenzzNOV"
+          Write-Host "Password: DenzzNO@123"
+          Tulis-Host "==================`n"
+          
+          selama ($true) {
+              Write-Host "[$(Get-Date)] RDP Aktif"
+              Mulai-Tidur -Detik 300
+          }
